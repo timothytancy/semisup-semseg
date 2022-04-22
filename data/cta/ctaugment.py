@@ -86,18 +86,11 @@ class CTAugment(object):
             for p, rate in zip(bins, self.rates[k]):
                 p = int(p * len(rate) * 0.999)
                 rate[p] = rate[p] * self.decay + proximity * (1 - self.decay)
-            print(f"\t {k} weights updated")
 
     def stats(self):
         return "\n".join(
             "%-16s    %s"
-            % (
-                k,
-                " / ".join(
-                    " ".join("%.2f" % x for x in self.rate_to_p(rate))
-                    for rate in self.rates[k]
-                ),
-            )
+            % (k, " / ".join(" ".join("%.2f" % x for x in self.rate_to_p(rate)) for rate in self.rates[k]),)
             for k in sorted(OPS.keys())
         )
 

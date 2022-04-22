@@ -166,21 +166,8 @@ def get_current_consistency_weight(epoch):
     return args.consistency * ramps.sigmoid_rampup(epoch, args.consistency_rampup)
 
 
-def refresh_policies(db_train, cta):
-    """refresh augmentation policy for CTAugment
-
-    Args:
-        db_train (BaseDataSets): train dataset instance 
-        cta (CTAugment): CTA object instance
-    """
-    db_train.ops_weak = cta.policy(probe=False, weak=True)
-    db_train.ops_strong = cta.policy(probe=False, weak=False)
-    # logging.info(f"\nWeak Policy: {db_train.ops_weak}")
-    # logging.info(f"Strong Policy: {db_train.ops_strong}")
-
-
 def main():
-    logpath = args.out + "/log"
+    logpath = args.out + "/log_baseline"
     writer = SummaryWriter(logpath)
 
     h, w = map(int, args.input_size.split(","))
@@ -205,33 +192,22 @@ def main():
     model.train()
     model.cuda(args.gpu)
 
-    # FIXME: ADD MEAN TEACHER MODEL
-
     cudnn.benchmark = True
 
     if not os.path.exists(args.checkpoint_dir):
         os.makedirs(args.checkpoint_dir)
 
-    # instantiate cta object
-    cta = CTAugment()
-    ops_weak = cta.policy(probe=False, weak=True)
-    ops_strong = cta.policy(probe=False, weak=False)
-
     if args.dataset == "pascal_voc":
-        train_dataset = VOCCTADataSet(
+        train_dataset = VOCDataSet(
             args.data_dir,
             args.data_list,
             crop_size=input_size,
-            ops_weak=ops_weak,
-            ops_strong=ops_strong
-            # scale=args.random_scale,
-            # mirror=args.random_mirror,
-            # mean=IMG_MEAN,
+            scale=args.random_scale,
+            mirror=args.random_mirror,
+            mean=IMG_MEAN,
         )
         valloader = data.DataLoader(
-            VOCCTADataSet(
-                args.data_dir, args.data_list, crop_size=(505, 505), mean=IMG_MEAN, scale=False, split="test",
-            ),
+            VOCDataSet(args.data_dir, args.data_list, crop_size=(505, 505), mean=IMG_MEAN, scale=False,),
             batch_size=1,
             shuffle=False,
             pin_memory=True,
@@ -302,9 +278,6 @@ def main():
     interp = nn.Upsample(size=(input_size[0], input_size[1]), mode="bilinear", align_corners=True)
 
     for i_iter in range(args.num_steps):
-        if i_iter > 0:
-            refresh_policies(train_dataset, cta)
-        loss_value = 0
         model.train()
         optimizer.zero_grad()
         adjust_learning_rate(optimizer, i_iter)
@@ -313,55 +286,20 @@ def main():
         except:
             trainloader_iter = iter(trainloader)
             batch_lab = next(trainloader_iter)
-        images_weak, images_strong, labels, _, _, index = batch_lab
-        images_weak = Variable(images_weak).cuda(args.gpu)
-        images_strong = Variable(images_strong).cuda(args.gpu)
-        labels = labels.squeeze(1).long().cuda(args.gpu)
+        images, labels, _, _, index = batch_lab
+        images = Variable(images).cuda(args.gpu)
 
-        outputs_weak = interp(model(images_weak))
-        outputs_strong = interp(model(images_strong))
+        pred = interp(model(images))
+        loss = loss_calc(pred, labels, args.gpu)
 
-        # supervised and unsupervised slices
-        outputs_weak_sup = outputs_weak[:labeled_bs]
-        outputs_weak_sup_soft = torch.softmax(outputs_weak_sup, dim=1)
-        outputs_weak_unsup = outputs_weak[labeled_bs:]
-        outputs_strong_unsup = outputs_strong[labeled_bs:]
-        outputs_strong_unsup_soft = torch.softmax(outputs_strong_unsup, dim=1)
-
-        # supervised loss
-        sup_loss = ce_loss(outputs_weak_sup, labels[:labeled_bs]) + dice_loss(
-            outputs_weak_sup_soft, labels[:labeled_bs].unsqueeze(1)
-        )
-        # loss = loss_calc(pred, labels, args.gpu)
-
-        outputs_weak_unsup_soft = torch.softmax(outputs_weak_unsup, dim=1)
-        pseudo_labels = torch.argmax(outputs_weak_unsup_soft.detach(), dim=1, keepdim=False)
-
-        # unsupervised loss
-        unsup_loss = ce_loss(outputs_strong_unsup, pseudo_labels) + dice_loss(
-            outputs_strong_unsup_soft, pseudo_labels.unsqueeze(1)
-        )
-
-        consistency_weight = get_current_consistency_weight(i_iter // 150)
-        loss = sup_loss + consistency_weight * unsup_loss
         loss.backward()
-        loss_value += loss.item()
+
         optimizer.step()
 
-        # update cta bins
-        cta.update_rates(train_dataset.ops_weak, 1.0 - 0.5 * loss_value)
-        cta.update_rates(train_dataset.ops_strong, 1.0 - 0.5 * loss_value)
-
-        logging.info(
-            "iter = {0:6d}/{1:6d}, sup_loss = {2:.3f}, unsup_loss = {2:.3f}, total_loss = {2:.3f}".format(
-                i_iter, args.num_steps, sup_loss.item(), unsup_loss.item(), loss_value
-            )
-        )
+        logging.info("iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}".format(i_iter, args.num_steps, loss.item()))
 
         if i_iter % 10 == 0:
-            writer.add_scalar("loss/sup_loss", sup_loss.item(), i_iter)
-            writer.add_scalar("loss/unsup_loss", unsup_loss.item(), i_iter)
-            writer.add_scalar("loss/total_weighted_loss", loss.item(), i_iter)
+            writer.add_scalar("loss/loss", loss.item(), i_iter)
         if i_iter % 200 == 0 and i_iter > 0:
             miou_val, loss_val = validate(valloader, interp_val, model, writer, i_iter)
             logging.info(f"miou: {miou_val}, loss: {loss_val}")
@@ -395,7 +333,6 @@ def validate(valloader, interp_val, model, writer, i_iter):
         output = interp_val(output)
         # loss_ce = loss_calc(output, label, args.gpu)
         output = output.cpu().data[0].numpy()
-        label = label.squeeze(0)
 
         if index == 0:
             writer.add_image("test/image", image[0], i_iter)

@@ -87,7 +87,6 @@ class VOCDataSet(data.Dataset):
             image = image[:, :, ::flip]
             label = label[:, ::flip]
 
-        print(image[0].shape, label.shape)
         return image.copy(), label.copy(), np.array(size), name, index
 
 
@@ -217,6 +216,7 @@ class VOCCTADataSet(data.Dataset):
         ignore_label=255,
         ops_weak=None,
         ops_strong=None,
+        split="train",
     ):
         self.root = root
         self.list_path = list_path
@@ -231,6 +231,7 @@ class VOCCTADataSet(data.Dataset):
         self.files = []
         self.ops_weak = ops_weak
         self.ops_strong = ops_strong
+        self.split = split
         assert bool(ops_weak) == bool(ops_strong), "Provide both strong and weak policy"
 
         # for split in ["train", "trainval", "val"]:
@@ -280,14 +281,14 @@ class VOCCTADataSet(data.Dataset):
         label = Image.fromarray(np.uint8(label))
 
         assert image.size == label.size, "image and label must be of the same size"
+        to_tensor = transforms.ToTensor()
+        if self.split != "train":
+            return to_tensor(image), to_tensor(label), np.array(size), name, index
+
         # apply augmentations
         image_weak = cta_apply(image, self.ops_weak)
         image_strong = cta_apply(image_weak, self.ops_strong)
         label = cta_apply(label, self.ops_weak)
-        image_weak.save("weak.jpg")
-        image_strong.save("strong.jpg")
-
-        to_tensor = transforms.ToTensor()
 
         image, image_weak, image_strong, label = (
             to_tensor(image),
