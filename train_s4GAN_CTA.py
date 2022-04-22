@@ -1,3 +1,4 @@
+import logging
 import argparse
 import os
 import sys
@@ -10,6 +11,7 @@ import numpy as np
 import pickle
 import scipy.misc
 
+import data.cta.ctaugment as ctaugment
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -22,15 +24,17 @@ import torchvision.transforms as transform
 from tensorboardX import SummaryWriter
 
 from model.deeplabv2 import Res_Deeplab
+from tqdm import tqdm
 
 # from model.deeplabv3p import Res_Deeplab
 
 from model.discriminator import s4GAN_discriminator
 from utils.loss import CrossEntropy2d
-from data.voc_dataset import VOCDataSet, VOCGTDataSet
+from data.voc_dataset import VOCDataSet, VOCGTDataSet, VOCCTADataSet
 from data import get_loader, get_data_path
 from data.augmentations import *
 from utils.metric import get_iou
+from data.cta.ctaugment import CTAugment
 
 start = timeit.default_timer()
 
@@ -227,11 +231,13 @@ def find_good_maps(D_outs, pred_all):
 
 criterion = nn.BCELoss()
 
+logpath = args.out + "/log" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
 
 def main():
     print(args)
 
-    writer = SummaryWriter("result/log" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    writer = SummaryWriter(logpath)
 
     h, w = map(int, args.input_size.split(","))
     input_size = (h, w)
@@ -269,17 +275,22 @@ def main():
     model_D.train()
     model_D.cuda(args.gpu)
 
+    cta = CTAugment()
+    ops_weak = cta.policy(probe=False, weak=True)
+    ops_strong = cta.policy(probe=False, weak=False)
     if not os.path.exists(args.checkpoint_dir):
         os.makedirs(args.checkpoint_dir)
 
     if args.dataset == "pascal_voc":
-        train_dataset = VOCDataSet(
+        train_dataset = VOCCTADataSet(
             args.data_dir,
             args.data_list,
             crop_size=input_size,
-            scale=args.random_scale,
-            mirror=args.random_mirror,
-            mean=IMG_MEAN,
+            ops_weak=ops_weak,
+            ops_strong=ops_strong
+            # scale=args.random_scale,
+            # mirror=args.random_mirror,
+            # mean=IMG_MEAN,
         )
         # train_gt_dataset = VOCGTDataSet(args.data_dir, args.data_list, crop_size=input_size,
         # scale=args.random_scale, mirror=args.random_mirror, mean=IMG_MEAN)
@@ -303,7 +314,13 @@ def main():
         # train_gt_dataset = data_loader( data_path, is_transform=True, augmentations=data_aug)
 
     train_dataset_size = len(train_dataset)
-    print("dataset size: ", train_dataset_size)
+    logging.info(f"dataset size: {train_dataset_size}")
+
+    cta = ctaugment.CTAugment()
+    train_dataset.ops_weak = cta.policy(probe=False, weak=True)
+    train_dataset.ops_strong = cta.policy(probe=False, weak=False)
+    logging.info(f"\nWeak Policy: {train_dataset.ops_weak}")
+    logging.info(f"Strong Policy: {train_dataset.ops_strong}")
 
     if args.labeled_ratio is None:
         trainloader = data.DataLoader(
@@ -324,7 +341,7 @@ def main():
 
         if args.split_id is not None:
             train_ids = pickle.load(open(args.split_id, "rb"))
-            print("loading train ids from {}".format(args.split_id))
+            logging.info("loading train ids from {}".format(args.split_id))
         else:
             train_ids = np.arange(train_dataset_size)
             np.random.shuffle(train_ids)
@@ -386,6 +403,28 @@ def main():
         Variable(torch.zeros(args.batch_size, 1).cuda()),
     )
 
+    max_epoch = args.num_steps // len(trainloader)
+    # iterator = tqdm(range(max_epoch), ncols=70)
+
+    # for epoch_num in iterator:
+    #     epoch_errors = []
+    #     # refresh_policies()
+    #     for i_batch, sampled_batch in enumerate(trainloader):
+    #         weak_batch, strong_batch, label_batch = (
+    #             sampled_batch["image_weak"].cuda(),
+    #             sampled_batch["image_strong"].cuda(),
+    #             sampled_batch["label_aug"].cuda(),
+    #         )
+
+    #         # get outputs
+    #         outputs_weak = interp(model(weak_batch))
+    #         outputs_strong = interp(model(strong_batch))
+
+    #         weak_sup = outputs_weak[:partial_size]
+    #         label_sup = label_batch[:partial_size]
+    #         weak_unsup = outputs_strong[partial_size:]
+    #         strong_unsup = outputs_strong[partial_size:]
+
     for i_iter in range(args.num_steps):
 
         loss_ce_value = 0
@@ -403,41 +442,54 @@ def main():
         for param in model_D.parameters():
             param.requires_grad = False
 
-        # training loss for labeled data only
+        # SUPERVISED TRAINING
         try:
             batch = next(trainloader_iter)
         except:
             trainloader_iter = iter(trainloader)
             batch = next(trainloader_iter)
 
-        images, labels, _, _, _ = batch
-        display_images = images
-        images = Variable(images).cuda(args.gpu)
-        pred = interp(model(images))
-        loss_ce = loss_calc(pred, labels, args.gpu)  # Cross entropy loss for labeled data
+        images_weak, _, labels, _, _, _ = batch
+        images_weak = images_weak.permute(0, 3, 1, 2).float()
+        # image_strong = image_strong.permute(0, 3, 1, 2).float()
+        display_images = images_weak  # save copy of image for tensorboard output
+        images_weak = Variable(images_weak).cuda(args.gpu)
+        pred_weak = interp(model(images_weak))
+        loss_ce = loss_calc(pred_weak, labels, args.gpu)  # Cross entropy loss for labeled data
 
-        # training loss for remaining unlabeled data
+        # UNSUPERVISED TRAINING
         try:
             batch_remain = next(trainloader_remain_iter)
         except:
             trainloader_remain_iter = iter(trainloader_remain)
             batch_remain = next(trainloader_remain_iter)
 
-        images_remain, _, _, _, _ = batch_remain
-        images_remain = Variable(images_remain).cuda(args.gpu)
-        pred_remain = interp(model(images_remain))
+        images_weak_remain, images_strong_remain, _, _, _, _ = batch_remain
+        images_weak_remain = images_weak_remain.permute(0, 3, 1, 2).float()
+        images_weak_remain = Variable(images_weak_remain).cuda(args.gpu)
+        images_strong_remain = images_strong_remain.permute(0, 3, 1, 2).float()
+        images_strong_remain = Variable(images_strong_remain).cuda(args.gpu)
+        preds_weak_remain = interp(model(images_weak_remain))
+        preds_strong_remain = interp(model(images_strong_remain))
+
+        # pseudo labels
+        print("pred size: ", pred_weak.shape)
+        pred_weak_remain_soft = torch.softmax(preds_weak_remain, dim=1)
+        pseudo_labs = torch.argmax(pred_weak_remain_soft.detach(), dim=1, keepdim=False)
+        print(f"pseudo label size {pseudo_labs.shape}")
 
         # concatenate the prediction with the input images
-        images_remain = (images_remain - torch.min(images_remain)) / (
-            torch.max(images_remain) - torch.min(images_remain)
+        images_strong_remain = (images_strong_remain - torch.min(images_strong_remain)) / (
+            torch.max(images_strong_remain) - torch.min(images_strong_remain)
         )
-        # print (pred_remain.size(), images_remain.size())
-        pred_cat = torch.cat((F.softmax(pred_remain, dim=1), images_remain), dim=1)
+        # TODO: figure out if weak/strong should be used here
+        pred_cat = torch.cat((F.softmax(preds_strong_remain, dim=1), images_strong_remain), dim=1)
 
-        D_out_z, D_out_y_pred = model_D(pred_cat)  # predicts the D ouput 0-1 and feature map for FM-loss
+        # predicts the D ouput 0-1 and feature map for FM-loss
+        D_out_z, D_out_y_pred = model_D(pred_cat)
 
         # find predicted segmentation maps above threshold
-        pred_sel, labels_sel, count = find_good_maps(D_out_z, pred_remain)
+        pred_sel, labels_sel, count = find_good_maps(D_out_z, preds_strong_remain)
 
         # training loss on above threshold segmentation predictions (Cross Entropy Loss)
         if count > 0 and i_iter > 0:
@@ -452,12 +504,14 @@ def main():
             trainloader_gt_iter = iter(trainloader_gt)
             batch_gt = next(trainloader_gt_iter)
 
-        images_gt, labels_gt, _, _, _ = batch_gt
+        images_gt, _, labels_gt, _, _, _ = batch_gt
+        images_gt = images_gt.permute(0, 3, 1, 2).float()
+
         # Converts grounth truth segmentation into 'num_classes' segmentation maps.
         D_gt_v = Variable(one_hot(labels_gt)).cuda(args.gpu)
 
         images_gt = images_gt.cuda()
-        images_gt = (images_gt - torch.min(images_gt)) / (torch.max(images) - torch.min(images))
+        images_gt = (images_gt - torch.min(images_gt)) / (torch.max(images_weak) - torch.min(images_weak))
 
         D_gt_v_cat = torch.cat((D_gt_v, images_gt), dim=1)
         D_out_z_gt, D_out_y_gt = model_D(D_gt_v_cat)
@@ -481,7 +535,7 @@ def main():
             param.requires_grad = True
 
         # train with pred
-        pred_cat = pred_cat.detach()  # detach does not allow the graddients to back propagate.
+        pred_cat = pred_cat.detach()  # detach does not allow the gradients to back propagate.
 
         D_out_z, _ = model_D(pred_cat)
         y_fake_ = Variable(torch.zeros(D_out_z.size(0), 1).cuda())
@@ -499,7 +553,7 @@ def main():
         optimizer.step()
         optimizer_D.step()
 
-        print(
+        logging.info(
             "iter = {0:8d}/{1:8d}, loss_ce = {2:.3f}, loss_fm = {3:.3f}, loss_S = {4:.3f}, loss_D = {5:.3f}".format(
                 i_iter, args.num_steps, loss_ce_value, loss_fm_value, loss_S_value, loss_D_value,
             )
@@ -586,4 +640,12 @@ def validate(valloader, interp_val, model, writer, i_iter):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        filename=args.out + "/log.txt",
+        level=logging.INFO,
+        format="[%(asctime)s.%(msecs)03d] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    logging.info(str(args))
     main()

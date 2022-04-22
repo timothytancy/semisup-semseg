@@ -24,3 +24,4 @@ mlmt_v2.py
 mlmt_feat.py
 *.sh
 myprog*
+.vscode/
