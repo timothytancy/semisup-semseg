@@ -70,16 +70,24 @@ class VOCDataSet(data.Dataset):
         pad_h = max(self.crop_h - img_h, 0)
         pad_w = max(self.crop_w - img_w, 0)
         if pad_h > 0 or pad_w > 0:
-            img_pad = cv2.copyMakeBorder(image, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0))
-            label_pad = cv2.copyMakeBorder(label, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(self.ignore_label,),)
+            img_pad = cv2.copyMakeBorder(
+                image, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0)
+            )
+            label_pad = cv2.copyMakeBorder(
+                label, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(self.ignore_label,),
+            )
         else:
             img_pad, label_pad = image, label
 
         img_h, img_w = label_pad.shape
         h_off = random.randint(0, img_h - self.crop_h)
         w_off = random.randint(0, img_w - self.crop_w)
-        image = np.asarray(img_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,)
-        label = np.asarray(label_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,)
+        image = np.asarray(
+            img_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,
+        )
+        label = np.asarray(
+            label_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,
+        )
         image = image[:, :, ::-1]  # change to BGR
         image = image.transpose((2, 0, 1))
         if self.is_mirror:
@@ -87,7 +95,6 @@ class VOCDataSet(data.Dataset):
             image = image[:, :, ::flip]
             label = label[:, ::flip]
 
-        print(image[0].shape, label.shape)
         return image.copy(), label.copy(), np.array(size), name, index
 
 
@@ -160,8 +167,12 @@ class VOCGTDataSet(data.Dataset):
         img_h, img_w = label.shape
         h_off = random.randint(0, img_h - self.crop_h)
         w_off = random.randint(0, img_w - self.crop_w)
-        image = np.asarray(image[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32)
-        label = np.asarray(label[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32)
+        image = np.asarray(
+            image[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32
+        )
+        label = np.asarray(
+            label[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32
+        )
         image = image[:, :, ::-1]  # change to BGR
         image = image.transpose((2, 0, 1))
         if self.is_mirror:
@@ -200,7 +211,9 @@ class VOCDataTestSet(data.Dataset):
         pad_h = max(self.crop_h - img_h, 0)
         pad_w = max(self.crop_w - img_w, 0)
         if pad_h > 0 or pad_w > 0:
-            image = cv2.copyMakeBorder(image, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0))
+            image = cv2.copyMakeBorder(
+                image, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0)
+            )
         image = image.transpose((2, 0, 1))
         return image, name, size
 
@@ -213,7 +226,7 @@ class VOCCTADataSet(data.Dataset):
         max_iters=None,
         crop_size=(321, 321),
         mean=(128, 128, 128),
-        scale=True,
+        # scale=True,
         ignore_label=255,
         ops_weak=None,
         ops_strong=None,
@@ -227,7 +240,7 @@ class VOCCTADataSet(data.Dataset):
         self.crop_h, self.crop_w = crop_size
         if not max_iters == None:
             self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids)))
-        self.scale = scale
+        # self.scale = scale
         self.files = []
         self.ops_weak = ops_weak
         self.ops_strong = ops_strong
@@ -252,65 +265,98 @@ class VOCCTADataSet(data.Dataset):
         datafiles = self.files[index]
         image = cv2.imread(datafiles["img"], cv2.IMREAD_COLOR)
         label = cv2.imread(datafiles["label"], cv2.IMREAD_GRAYSCALE)
-        size = image.shape
+        label_raw = label
+
+        image_weak = cta_apply(Image.fromarray(image), self.ops_weak)
+        image_strong = cta_apply(image_weak, self.ops_strong)
+        label = cta_apply(Image.fromarray(label), self.ops_weak)
+        image_weak, image_strong, label = (
+            np.array(image_weak),
+            np.array(image_strong),
+            np.array(label),
+        )
+        size = image_weak.shape
         name = datafiles["name"]
-        if self.scale:
-            image, label = self.generate_scale_label(image, label)
-        image = np.asarray(image, np.float32)
-        # image -= self.mean
-        img_pad, label_pad = image, label
+
+        # if self.scale:
+        #     image, label = self.generate_scale_label(image, label)
+        image_weak = np.asarray(image_weak, np.float32)
+        image_strong = np.asarray(image_strong, np.float32)
+        image_weak -= self.mean
+        image_strong -= self.mean
+        img_pad, label_pad = image_weak, label
 
         img_h, img_w = label.shape
         pad_h = max(self.crop_h - img_h, 0)
         pad_w = max(self.crop_w - img_w, 0)
         if pad_h > 0 or pad_w > 0:
-            img_pad = cv2.copyMakeBorder(image, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0))
-            label_pad = cv2.copyMakeBorder(label, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(self.ignore_label,),)
+            img_weak_pad = cv2.copyMakeBorder(
+                image_weak, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0)
+            )
+            img_strong_pad = cv2.copyMakeBorder(
+                image_strong, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(0.0, 0.0, 0.0)
+            )
+            label_pad = cv2.copyMakeBorder(
+                label, 0, pad_h, 0, pad_w, cv2.BORDER_CONSTANT, value=(self.ignore_label,),
+            )
         else:
-            img_pad, label_pad = image, label
+            img_weak_pad, img_strong_pad, label_pad = image_weak, image_strong, label
 
         img_h, img_w = label_pad.shape
         h_off = random.randint(0, img_h - self.crop_h)
         w_off = random.randint(0, img_w - self.crop_w)
-        image = np.asarray(img_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,)
-        label = np.asarray(label_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,)
+        image_weak = np.asarray(
+            img_weak_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,
+        )
+        image_strong = np.asarray(
+            img_strong_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,
+        )
+        label = np.asarray(
+            label_pad[h_off : h_off + self.crop_h, w_off : w_off + self.crop_w], np.float32,
+        )
 
-        image = image[:, :, ::-1]  # change to RGB
-        image = Image.fromarray(np.uint8(image))
-        label = Image.fromarray(np.uint8(label))
+        image_weak = image_weak[:, :, ::-1]  # change to RGB
+        image_strong = image_strong[:, :, ::-1]  # change to RGB
+        # image = Image.fromarray(np.uint8(image))
+        # label = Image.fromarray(np.uint8(label))
 
-        assert image.size == label.size, "image and label must be of the same size"
+        image_weak = image_weak.transpose((2, 0, 1))
+        image_strong = image_strong.transpose((2, 0, 1))
+        assert (
+            image_weak.shape[1:] == image_strong.shape[1:] == label.shape
+        ), "image and label must be of the same size"
+        # print("label raw", np.unique(label_raw))
+        # print("label", np.unique(label))
+        # assert np.array_equal(np.unique(label_raw), np.unique(label)), "labels changed"
+
         # apply augmentations
-        image_weak = cta_apply(image, self.ops_weak)
-        image_strong = cta_apply(image_weak, self.ops_strong)
-        label = cta_apply(label, self.ops_weak)
-        image_weak.save("weak.jpg")
-        image_strong.save("strong.jpg")
 
-        to_tensor = transforms.ToTensor()
+        # to_tensor = transforms.ToTensor()
 
-        image, image_weak, image_strong, label = (
-            to_tensor(image),
-            to_tensor(image_weak),
-            to_tensor(image_strong),
-            to_tensor(label),
-        )
+        # image, image_weak, image_strong, label = (
+        #     to_tensor(image),
+        #     to_tensor(image_weak),
+        #     to_tensor(image_strong),
+        #     to_tensor(label)*255,
+        # )
+        # label = label.squeeze()
+        return (image_weak.copy(), image_strong.copy(), label.copy(), np.array(size), name, index)
 
-        sample = {
-            "image": image,
-            "image_weak": image_weak,
-            "image_strong": image_strong,
-            "label_aug": label,
-        }
-        # return sample
-        return (
-            image_weak,
-            image_strong,
-            label,
-            np.array(size),
-            name,
-            index,
-        )
+        # sample = {
+        #     "image": image,
+        #     "image_weak": image_weak,
+        #     "image_strong": image_strong,
+        #     "label_aug": label,
+        # }
+        # # return sample
+        # return (
+        #     image_weak,
+        #     image_strong,
+        #     label,
+        #     np.array(size),
+        #     name,
+        #     index,
+        # )
 
 
 class TwoStreamBatchSampler(Sampler):
@@ -336,7 +382,8 @@ class TwoStreamBatchSampler(Sampler):
         return (
             primary_batch + secondary_batch
             for (primary_batch, secondary_batch) in zip(
-                grouper(primary_iter, self.primary_batch_size), grouper(secondary_iter, self.secondary_batch_size),
+                grouper(primary_iter, self.primary_batch_size),
+                grouper(secondary_iter, self.secondary_batch_size),
             )
         )
 
@@ -368,9 +415,3 @@ if __name__ == "__main__":
     trainloader = data.DataLoader(dst, batch_size=4)
     for i, data in enumerate(trainloader):
         imgs, labels = data
-        if i == 0:
-            img = torchvision.utils.make_grid(imgs).numpy()
-            img = np.transpose(img, (1, 2, 0))
-            img = img[:, :, ::-1]
-            # plt.imshow(img)
-            # plt.show()

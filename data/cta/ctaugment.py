@@ -86,7 +86,6 @@ class CTAugment(object):
             for p, rate in zip(bins, self.rates[k]):
                 p = int(p * len(rate) * 0.999)
                 rate[p] = rate[p] * self.decay + proximity * (1 - self.decay)
-            print(f"\t {k} weights updated")
 
     def stats(self):
         return "\n".join(
@@ -94,8 +93,7 @@ class CTAugment(object):
             % (
                 k,
                 " / ".join(
-                    " ".join("%.2f" % x for x in self.rate_to_p(rate))
-                    for rate in self.rates[k]
+                    " ".join("%.2f" % x for x in self.rate_to_p(rate)) for rate in self.rates[k]
                 ),
             )
             for k in sorted(OPS.keys())
@@ -180,7 +178,7 @@ def cutout(x, level):
     size = 1 + int(level * min(x.size) * 0.499)
     img_height, img_width = x.size
     height_loc = np.random.randint(low=img_height // 2, high=img_height)
-    width_loc = np.random.randint(low=img_height // 2, high=img_width)
+    width_loc = np.random.randint(low=img_width // 2, high=img_width)
     upper_coord = (max(0, height_loc - size // 2), max(0, width_loc - size // 2))
     lower_coord = (
         min(img_height, height_loc + size // 2),

@@ -25,3 +25,4 @@ mlmt_feat.py
 *.sh
 myprog*
 .vscode/
+result/
