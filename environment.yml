@@ -1,7 +1,5 @@
-name: ssl
+name: base
 channels:
-  - pytorch
-  - conda-forge
   - defaults
 dependencies:
   - _ipyw_jlab_nb_ext_conf=0.1.0=py39h06a4308_0
@@ -27,10 +25,10 @@ dependencies:
   - babel=2.9.1=pyhd3eb1b0_0
   - backcall=0.2.0=pyhd3eb1b0_0
   - backports=1.0=pyhd3eb1b0_2
-  - backports.functools_lru_cache=1.6.4=pyhd8ed1ab_0
+  - backports.functools_lru_cache=1.6.4=pyhd3eb1b0_0
   - backports.shutil_get_terminal_size=1.0.0=pyhd3eb1b0_3
-  - backports.tempfile=1.0=py_0
-  - backports.weakref=1.0.post1=pyhd8ed1ab_1003
+  - backports.tempfile=1.0=pyhd3eb1b0_1
+  - backports.weakref=1.0.post1=py_1
   - beautifulsoup4=4.10.0=pyh06a4308_0
   - binaryornot=0.4.4=pyhd3eb1b0_1
   - bitarray=2.3.0=py39h7f8727e_1
@@ -60,19 +58,18 @@ dependencies:
   - cloudpickle=2.0.0=pyhd3eb1b0_0
   - clyent=1.2.2=py39h06a4308_1
   - colorama=0.4.4=pyhd3eb1b0_0
-  - conda=4.11.0=py39hf3d152e_1
+  - conda=4.10.3=py39h06a4308_0
   - conda-build=3.21.5=py39h06a4308_0
   - conda-content-trust=0.1.1=pyhd3eb1b0_0
   - conda-env=2.6.0=1
-  - conda-pack=0.6.0=pyhd3deb0d_0
-  - conda-package-handling=1.7.3=py39h3811e60_0
+  - conda-pack=0.6.0=pyhd3eb1b0_0
+  - conda-package-handling=1.7.3=py39h27cfd23_1
   - conda-repo-cli=1.0.4=pyhd3eb1b0_0
   - conda-token=0.3.0=pyhd3eb1b0_0
   - conda-verify=3.4.2=py_1
   - contextlib2=0.6.0.post1=pyhd3eb1b0_0
   - cookiecutter=1.7.2=pyhd3eb1b0_0
   - cryptography=3.4.8=py39hd23ed53_0
-  - cudatoolkit=11.3.1=h2bc3f7f_2
   - curl=7.78.0=h1ccaba5_0
   - cycler=0.10.0=py39h06a4308_0
   - cython=0.29.24=py39hdbfa776_0
@@ -89,13 +86,10 @@ dependencies:
   - diff-match-patch=20200713=pyhd3eb1b0_0
   - distributed=2021.10.0=py39h06a4308_0
   - docutils=0.17.1=py39h06a4308_1
-  - efficientnet-pytorch=0.7.1=pyhd8ed1ab_1
-  - einops=0.4.0=pyhd8ed1ab_0
   - entrypoints=0.3=py39h06a4308_0
   - et_xmlfile=1.1.0=py39h06a4308_0
   - expat=2.4.1=h2531618_2
   - fastcache=1.1.0=py39he8ac12f_0
-  - ffmpeg=4.3=hf484d3e_0
   - filelock=3.3.1=pyhd3eb1b0_1
   - flake8=3.9.2=pyhd3eb1b0_0
   - flask=1.1.2=pyhd3eb1b0_0
@@ -104,16 +98,14 @@ dependencies:
   - freetype=2.10.4=h5ab3b9f_0
   - fribidi=1.0.10=h7b6447c_0
   - fsspec=2021.8.1=pyhd3eb1b0_0
-  - future=0.18.2=py39hf3d152e_4
+  - future=0.18.2=py39h06a4308_1
   - get_terminal_size=1.0.0=haa9412d_0
-  - gettext=0.19.8.1=h0b5b191_1005
   - gevent=21.8.0=py39h7f8727e_1
   - giflib=5.2.1=h7b6447c_0
   - glib=2.69.1=h5202010_0
   - glob2=0.7=pyhd3eb1b0_0
   - gmp=6.2.1=h2531618_2
   - gmpy2=2.0.8=py39h8083e48_3
-  - gnutls=3.6.15=he1e5248_0
   - graphite2=1.3.14=h23475e2_0
   - greenlet=1.1.1=py39h295c915_0
   - gst-plugins-base=1.14.0=h8213a91_2
@@ -163,7 +155,6 @@ dependencies:
   - keyring=23.1.0=py39h06a4308_0
   - kiwisolver=1.3.1=py39h2531618_0
   - krb5=1.19.2=hac12032_0
-  - lame=3.100=h7f98852_1001
   - lazy-object-proxy=1.6.0=py39h27cfd23_0
   - lcms2=2.12=h3be6417_0
   - ld_impl_linux-64=2.35.1=h7274673_9
@@ -179,21 +170,16 @@ dependencies:
   - libgfortran-ng=7.5.0=ha8ba4b0_17
   - libgfortran4=7.5.0=ha8ba4b0_17
   - libgomp=9.3.0=h5101ec6_17
-  - libiconv=1.15=h516909a_1006
-  - libidn2=2.3.2=h7f98852_0
   - liblief=0.10.1=h2531618_1
   - libllvm11=11.1.0=h3826bc1_0
   - libnghttp2=1.41.0=hf8bcb03_2
   - libpng=1.6.37=hbc83047_0
-  - libprotobuf=3.15.8=h780b84a_0
   - libsodium=1.0.18=h7b6447c_0
   - libspatialindex=1.9.3=h2531618_0
   - libssh2=1.9.0=h1ba5d50_1
   - libstdcxx-ng=9.3.0=hd4cf53a_17
-  - libtasn1=4.16.0=h27cfd23_0
   - libtiff=4.2.0=h85742a9_0
   - libtool=2.4.6=h7b6447c_1005
-  - libunistring=0.9.10=h7f98852_0
   - libuuid=1.0.3=h7f8727e_2
   - libuv=1.40.0=h7b6447c_0
   - libwebp=1.2.0=h89dd481_0
@@ -228,14 +214,13 @@ dependencies:
   - multipledispatch=0.6.0=py39h06a4308_0
   - munkres=1.1.4=py_0
   - mypy_extensions=0.4.3=py39h06a4308_0
-  - navigator-updater=0.2.1=py39_1
+  - navigator-updater=0.2.1=py39h06a4308_0
   - nbclassic=0.2.6=pyhd3eb1b0_0
   - nbclient=0.5.3=pyhd3eb1b0_0
   - nbconvert=6.1.0=py39h06a4308_0
   - nbformat=5.1.3=pyhd3eb1b0_0
   - ncurses=6.3=heee7806_1
   - nest-asyncio=1.5.1=pyhd3eb1b0_0
-  - nettle=3.7.3=hbbd107a_1
   - networkx=2.6.3=pyhd3eb1b0_0
   - nltk=3.6.5=pyhd3eb1b0_0
   - nose=1.3.7=pyhd3eb1b0_1006
@@ -246,7 +231,6 @@ dependencies:
   - numpy-base=1.20.3=py39h74d4b33_0
   - numpydoc=1.1.0=pyhd3eb1b0_1
   - olefile=0.46=pyhd3eb1b0_0
-  - openh264=2.1.1=h780b84a_0
   - openjpeg=2.4.0=h3ad879b_0
   - openpyxl=3.0.9=pyhd3eb1b0_0
   - openssl=1.1.1l=h7f8727e_0
@@ -276,7 +260,6 @@ dependencies:
   - prometheus_client=0.11.0=pyhd3eb1b0_0
   - prompt-toolkit=3.0.20=pyhd3eb1b0_0
   - prompt_toolkit=3.0.20=hd3eb1b0_0
-  - protobuf=3.15.8=py39he80948d_0
   - psutil=5.8.0=py39h27cfd23_1
   - ptyprocess=0.7.0=pyhd3eb1b0_2
   - py=1.10.0=pyhd3eb1b0_0
@@ -289,7 +272,7 @@ dependencies:
   - pyerfa=2.0.0=py39h27cfd23_0
   - pyflakes=2.3.1=pyhd3eb1b0_0
   - pygments=2.10.0=pyhd3eb1b0_0
-  - pyjwt=2.1.0=pyhd8ed1ab_0
+  - pyjwt=2.1.0=py39h06a4308_0
   - pylint=2.9.6=py39h06a4308_1
   - pyls-spyder=0.4.0=pyhd3eb1b0_0
   - pyodbc=4.0.31=py39h295c915_0
@@ -307,9 +290,6 @@ dependencies:
   - python-lsp-jsonrpc=1.0.0=pyhd3eb1b0_0
   - python-lsp-server=1.2.4=pyhd3eb1b0_0
   - python-slugify=5.0.2=pyhd3eb1b0_0
-  - python_abi=3.9=2_cp39
-  - pytorch=1.10.2=py3.9_cuda11.3_cudnn8.2.0_0
-  - pytorch-mutex=1.0=cuda
   - pytz=2021.3=pyhd3eb1b0_0
   - pywavelets=1.1.1=py39h6323ea4_4
   - pyxdg=0.27=pyhd3eb1b0_0
@@ -371,13 +351,10 @@ dependencies:
   - threadpoolctl=2.2.0=pyh0d69192_0
   - three-merge=0.1.1=pyhd3eb1b0_0
   - tifffile=2021.7.2=pyhd3eb1b0_2
-  - timm=0.4.12=pyhd8ed1ab_0
   - tinycss=0.4=pyhd3eb1b0_1002
   - tk=8.6.11=h1ccaba5_0
   - toml=0.10.2=pyhd3eb1b0_0
   - toolz=0.11.1=pyhd3eb1b0_0
-  - torchaudio=0.10.2=py39_cu113
-  - torchvision=0.11.3=py39_cu113
   - tornado=6.1=py39h27cfd23_0
   - tqdm=4.62.3=pyhd3eb1b0_1
   - traitlets=5.1.0=pyhd3eb1b0_0
@@ -401,9 +378,8 @@ dependencies:
   - xlrd=2.0.1=pyhd3eb1b0_0
   - xlsxwriter=3.0.1=pyhd3eb1b0_0
   - xlwt=1.3.0=py39h06a4308_0
-  - xmltodict=0.12.0=py_0
+  - xmltodict=0.12.0=pyhd3eb1b0_0
   - xz=5.2.5=h7b6447c_0
-  - yacs=0.1.6=py_0
   - yaml=0.2.5=h7b6447c_0
   - yapf=0.31.0=pyhd3eb1b0_0
   - zeromq=4.3.4=h2531618_0
@@ -415,30 +391,4 @@ dependencies:
   - zope.event=4.5.0=py39h06a4308_0
   - zope.interface=5.4.0=py39h7f8727e_0
   - zstd=1.4.9=haebb681_0
-  - pip:
-    - absl-py==1.0.0
-    - argparse==1.4.0
-    - batchgenerators==0.23
-    - cachetools==5.0.0
-    - google-auth==2.6.0
-    - google-auth-oauthlib==0.4.6
-    - grpcio==1.44.0
-    - linecache2==1.0.0
-    - markdown==3.3.6
-    - medpy==0.4.0
-    - nvidia-htop==1.0.5
-    - oauthlib==3.2.0
-    - opencv-python==4.5.5.62
-    - pyasn1==0.4.8
-    - pyasn1-modules==0.2.8
-    - requests-oauthlib==1.3.1
-    - rsa==4.8
-    - simpleitk==2.1.1
-    - tensorboard==2.8.0
-    - tensorboard-data-server==0.6.1
-    - tensorboard-plugin-wit==1.8.1
-    - tensorboardx==2.5
-    - termcolor==1.1.0
-    - traceback2==1.4.0
-    - unittest2==1.1.0
-prefix: /home/timothy/anaconda3/envs/ssl
+prefix: /home/timothy/anaconda3

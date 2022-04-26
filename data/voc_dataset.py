@@ -230,6 +230,7 @@ class VOCCTADataSet(data.Dataset):
         ignore_label=255,
         ops_weak=None,
         ops_strong=None,
+        split="train",
     ):
         self.root = root
         self.list_path = list_path
@@ -244,6 +245,7 @@ class VOCCTADataSet(data.Dataset):
         self.files = []
         self.ops_weak = ops_weak
         self.ops_strong = ops_strong
+        self.split = split
         assert bool(ops_weak) == bool(ops_strong), "Provide both strong and weak policy"
 
         # for split in ["train", "trainval", "val"]:
