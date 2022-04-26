@@ -428,7 +428,7 @@ def main():
             writer.add_scalar("loss/sup_loss", sup_loss.item(), i_iter)
             writer.add_scalar("loss/unsup_loss", unsup_loss.item(), i_iter)
             writer.add_scalar("loss/total_loss", loss.item(), i_iter)
-        if i_iter % 200 == 0 and i_iter > 0:
+        if i_iter % 200 == 0:
             miou_val, loss_val = validate(valloader, interp_val, model, writer, i_iter)
             logging.info(f"miou: {miou_val}, loss: {loss_val}")
             writer.add_scalar("val/miou", miou_val, i_iter)
@@ -466,12 +466,11 @@ def validate(valloader, interp_val, model, writer, i_iter):
         output = interp_val(output)
         # loss_ce = loss_calc(output, label, args.gpu)
         output = output.cpu().data[0].numpy()
-        label = label.squeeze(0)
 
-        if index == 0:
-            writer.add_image("test/image", image[0], i_iter)
-            writer.add_image("test/prediction", output_display, i_iter)
-            writer.add_image("test/label", label, i_iter)
+        # if index == 0:
+        #     writer.add_image("test/image", image[0], i_iter)
+        #     writer.add_image("test/prediction", output_display, i_iter)
+        #     writer.add_image("test/label", label, i_iter)
         # loss_val += loss_ce.item()
 
         if args.dataset == "pascal_voc":
