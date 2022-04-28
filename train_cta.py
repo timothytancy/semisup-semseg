@@ -32,11 +32,12 @@ from utils import ramps
 from data.voc_dataset import VOCDataSet, VOCGTDataSet, VOCCTADataSet, TwoStreamBatchSampler
 from data import get_loader, get_data_path
 from data.augmentations import *
-from data.cta.ctaugment import CTAugment
+from data.cta.ctaugment import OP, CTAugment, OPS
 
 start = timeit.default_timer()
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
+sorted_op_names = sorted(list(OPS.keys()))
 
 # dataset params
 NUM_CLASSES = 21  # 21 for PASCAL-VOC / 60 for PASCAL-Context
@@ -228,6 +229,28 @@ def refresh_policies(db_train, cta):
     db_train.ops_strong = cta.policy(probe=False, weak=False)
 
 
+def pack_as_tensor(k, bins, error, size=5, pad_value=-555.0):
+    out = torch.empty(size).fill_(pad_value).to(error)
+    out[0] = sorted_op_names.index(k)
+    le = len(bins)
+    out[1] = le
+    out[2 : 2 + le] = torch.tensor(bins).to(error)
+    out[2 + le] = error
+    return out
+
+
+def update_policies(probs, targets, policies, cta):
+    ops1 = policies[0][0]
+    ops2 = policies[0][1]
+    bins1 = [float(i) for i in policies[1][0]]
+    bins2 = [float(i) for i in policies[1][1]]
+    for prob, target, op1, bin1, op2, bin2 in zip(probs, targets, ops1, bins1, ops2, bins2):
+        error = prob - target
+        error = torch.abs(error).sum()
+        cta.update_rates([OP(f=op1, bins=[bin1])], 1.0 - 0.5 * error)
+        cta.update_rates([OP(f=op2, bins=[bin2])], 1.0 - 0.5 * error)
+
+
 logpath = "result/" + args.out
 
 
@@ -264,16 +287,15 @@ def main():
 
     # instantiate cta object
     cta = CTAugment()
-    ops_weak = cta.policy(probe=False, weak=True)
-    ops_strong = cta.policy(probe=False, weak=False)
 
     if args.dataset == "pascal_voc":
         train_dataset = VOCCTADataSet(
             args.data_dir,
             args.data_list,
             crop_size=input_size,
-            ops_weak=ops_weak,
-            ops_strong=ops_strong
+            cta=cta
+            # ops_weak=ops_weak,
+            # ops_strong=ops_strong
             # scale=args.random_scale,
             # mirror=args.random_mirror,
             # mean=IMG_MEAN,
@@ -367,8 +389,8 @@ def main():
     interp = nn.Upsample(size=(input_size[0], input_size[1]), mode="bilinear", align_corners=True)
 
     for i_iter in range(args.num_steps):
-        if i_iter > 0:
-            refresh_policies(train_dataset, cta)
+        # if i_iter > 0:
+        # refresh_policies(train_dataset, cta)
         loss_value = 0
         model.train()
         optimizer.zero_grad()
@@ -378,7 +400,9 @@ def main():
         except:
             trainloader_iter = iter(trainloader)
             batch_lab = next(trainloader_iter)
-        images_weak, images_strong, labels, _, _, index = batch_lab
+
+        images_weak, images_strong, labels, _, _, index, ops_weak, ops_strong = batch_lab
+
         images_weak = Variable(images_weak).cuda()
         images_strong = Variable(images_strong).cuda()
         labels = Variable(labels.long()).cuda()
@@ -404,6 +428,7 @@ def main():
         pseudo_labels = torch.argmax(outputs_weak_unsup_soft.detach(), dim=1, keepdim=False)
 
         # unsupervised loss
+
         unsup_loss = loss_calc(outputs_strong_unsup, pseudo_labels)
         # unsup_loss = ce_loss(outputs_strong_unsup, pseudo_labels)
         # + dice_loss(
@@ -417,8 +442,8 @@ def main():
         optimizer.step()
 
         # update cta bins
-        cta.update_rates(train_dataset.ops_weak, 1.0 - 0.5 * loss_value)
-        cta.update_rates(train_dataset.ops_strong, 1.0 - 0.5 * loss_value)
+        with torch.no_grad():
+            update_policies(outputs_weak_sup_soft, labels[:labeled_bs], ops_weak[:labeled_bs], cta)
 
         logging.info(
             "iter = {0:8d}/{1:8d}, total_loss = {2:.3f}".format(i_iter, args.num_steps, loss_value)
@@ -428,7 +453,7 @@ def main():
             writer.add_scalar("loss/sup_loss", sup_loss.item(), i_iter)
             writer.add_scalar("loss/unsup_loss", unsup_loss.item(), i_iter)
             writer.add_scalar("loss/total_loss", loss.item(), i_iter)
-        if i_iter % 200 == 0:
+        if i_iter % 200 == 0 and i_iter > 0:
             miou_val, loss_val = validate(valloader, interp_val, model, writer, i_iter)
             logging.info(f"miou: {miou_val}, loss: {loss_val}")
             writer.add_scalar("val/miou", miou_val, i_iter)
@@ -460,18 +485,19 @@ def validate(valloader, interp_val, model, writer, i_iter):
             break
         image, label, size, name, _ = batch
         size = size[0]
+        label = label.long().cuda()
         with torch.no_grad():
             output = model(image.cuda())
             output_display = torch.argmax(output, dim=1)
         output = interp_val(output)
-        # loss_ce = loss_calc(output, label, args.gpu)
+        loss_ce = loss_calc(output, label)
         output = output.cpu().data[0].numpy()
 
-        # if index == 0:
-        #     writer.add_image("test/image", image[0], i_iter)
-        #     writer.add_image("test/prediction", output_display, i_iter)
-        #     writer.add_image("test/label", label, i_iter)
-        # loss_val += loss_ce.item()
+        writer.add_image("test/image", image[0], i_iter)
+        writer.add_image("test/prediction", output_display, i_iter)
+        writer.add_image("test/label", label, i_iter)
+        loss_val += loss_ce.item()
+        label = label.cpu()
 
         if args.dataset == "pascal_voc":
             output = output[:, : size[0], : size[1]]
@@ -499,6 +525,7 @@ def validate(valloader, interp_val, model, writer, i_iter):
 
 
 if __name__ == "__main__":
+    torch.cuda.empty_cache()
     torch.cuda.set_device(args.gpu)
     if not os.path.exists(logpath):
         os.makedirs(logpath)

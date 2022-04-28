@@ -223,13 +223,14 @@ class VOCCTADataSet(data.Dataset):
         self,
         root,
         list_path,
+        cta,
         max_iters=None,
         crop_size=(321, 321),
         mean=(128, 128, 128),
         # scale=True,
         ignore_label=255,
-        ops_weak=None,
-        ops_strong=None,
+        # ops_weak=None,
+        # ops_strong=None,
         split="train",
     ):
         self.root = root
@@ -243,12 +244,9 @@ class VOCCTADataSet(data.Dataset):
             self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids)))
         # self.scale = scale
         self.files = []
-        self.ops_weak = ops_weak
-        self.ops_strong = ops_strong
+        self.cta = cta
         self.split = split
-        assert bool(ops_weak) == bool(ops_strong), "Provide both strong and weak policy"
 
-        # for split in ["train", "trainval", "val"]:
         for name in self.img_ids:
             img_file = osp.join(self.root, "JPEGImages/%s.jpg" % name)
             label_file = osp.join(self.root, "SegmentationClassAug/%s.png" % name)
@@ -263,11 +261,22 @@ class VOCCTADataSet(data.Dataset):
         label = cv2.resize(label, None, fx=f_scale, fy=f_scale, interpolation=cv2.INTER_NEAREST)
         return image, label
 
+    def deserialize(self, policy):
+        ops = []
+        bins = []
+        for p in policy:
+            ops.append(p[0])
+            bins.append(str(p[1][0]))
+        return (ops, bins)
+
     def __getitem__(self, index):
         datafiles = self.files[index]
         image = cv2.imread(datafiles["img"], cv2.IMREAD_COLOR)
         label = cv2.imread(datafiles["label"], cv2.IMREAD_GRAYSCALE)
         label_raw = label
+
+        self.ops_weak = self.cta.policy(probe=False, weak=True)
+        self.ops_strong = self.cta.policy(probe=False, weak=False)
 
         image_weak = cta_apply(Image.fromarray(image), self.ops_weak)
         image_strong = cta_apply(image_weak, self.ops_strong)
@@ -319,8 +328,6 @@ class VOCCTADataSet(data.Dataset):
 
         image_weak = image_weak[:, :, ::-1]  # change to RGB
         image_strong = image_strong[:, :, ::-1]  # change to RGB
-        # image = Image.fromarray(np.uint8(image))
-        # label = Image.fromarray(np.uint8(label))
 
         image_weak = image_weak.transpose((2, 0, 1))
         image_strong = image_strong.transpose((2, 0, 1))
@@ -333,6 +340,15 @@ class VOCCTADataSet(data.Dataset):
 
         # apply augmentations
 
+        # print(
+        #     "label raw",
+        #     len(np.unique(label_raw)),
+        #     " label processed",
+        #     len(np.unique(label)),
+        #     " weak ops",
+        #     self.ops_weak,
+        #     name,
+        # )
         # to_tensor = transforms.ToTensor()
 
         # image, image_weak, image_strong, label = (
@@ -342,7 +358,17 @@ class VOCCTADataSet(data.Dataset):
         #     to_tensor(label)*255,
         # )
         # label = label.squeeze()
-        return (image_weak.copy(), image_strong.copy(), label.copy(), np.array(size), name, index)
+
+        return (
+            image_weak.copy(),
+            image_strong.copy(),
+            label.copy(),
+            np.array(size),
+            name,
+            index,
+            self.deserialize(self.ops_weak),
+            self.deserialize(self.ops_strong),
+        )
 
         # sample = {
         #     "image": image,

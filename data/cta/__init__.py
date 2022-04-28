@@ -28,9 +28,6 @@ def cta_apply(pil_img, ops):
     return pil_img
 
 
-def deserialize(policy_str):
-    return [OP(f=x[0], bins=x[1]) for x in json.loads(policy_str)]
-
 
 def stats(cta):
     return "\n".join(
