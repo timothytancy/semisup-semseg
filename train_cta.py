@@ -239,11 +239,20 @@ def pack_as_tensor(k, bins, error, size=5, pad_value=-555.0):
     return out
 
 
-def update_policies(probs, targets, policies, cta):
-    ops1 = policies[0][0]
-    ops2 = policies[0][1]
-    bins1 = [float(i) for i in policies[1][0]]
-    bins2 = [float(i) for i in policies[1][1]]
+def update_policies(probs, targets, policies, cta, aug_mode=None):
+    assert aug_mode == "weak" or aug_mode == "strong", "Indicate weak/strong augmentation"
+    labeled_bs = args.batch_size // 2
+    if aug_mode == "weak":
+        ops1 = policies[0][0][:labeled_bs]
+        ops2 = policies[0][1][:labeled_bs]
+        bins1 = [float(i) for i in policies[1][0]][:labeled_bs]
+        bins2 = [float(i) for i in policies[1][1]][:labeled_bs]
+    else:
+        ops1 = policies[0][0][labeled_bs:]
+        ops2 = policies[0][1][labeled_bs:]
+        bins1 = [float(i) for i in policies[1][0]][labeled_bs:]
+        bins2 = [float(i) for i in policies[1][1]][labeled_bs:]
+
     for prob, target, op1, bin1, op2, bin2 in zip(probs, targets, ops1, bins1, ops2, bins2):
         error = prob - target
         error = torch.abs(error).sum()
@@ -389,9 +398,6 @@ def main():
     interp = nn.Upsample(size=(input_size[0], input_size[1]), mode="bilinear", align_corners=True)
 
     for i_iter in range(args.num_steps):
-        # if i_iter > 0:
-        # refresh_policies(train_dataset, cta)
-        loss_value = 0
         model.train()
         optimizer.zero_grad()
         adjust_learning_rate(optimizer, i_iter)
@@ -418,35 +424,34 @@ def main():
         outputs_strong_unsup_soft = torch.softmax(outputs_strong_unsup, dim=1)
 
         # supervised loss
-        sup_loss = loss_calc(outputs_weak_sup, labels[:labeled_bs])
-        # sup_loss = ce_loss(outputs_weak_sup, labels[:labeled_bs])
-        # + dice_loss(
-        #     outputs_weak_sup_soft, labels[:labeled_bs].unsqueeze(1)
-        # )
+        sup_loss = loss_calc(outputs_weak_sup, labels[:labeled_bs]) + dice_loss(
+            outputs_weak_sup_soft, labels[:labeled_bs].unsqueeze(1)
+        )
 
         outputs_weak_unsup_soft = torch.softmax(outputs_weak_unsup, dim=1)
         pseudo_labels = torch.argmax(outputs_weak_unsup_soft.detach(), dim=1, keepdim=False)
 
         # unsupervised loss
-
-        unsup_loss = loss_calc(outputs_strong_unsup, pseudo_labels)
-        # unsup_loss = ce_loss(outputs_strong_unsup, pseudo_labels)
-        # + dice_loss(
-        #     outputs_strong_unsup_soft, pseudo_labels.unsqueeze(1)
-        # )
+        unsup_loss = loss_calc(outputs_strong_unsup, pseudo_labels) + dice_loss(
+            outputs_strong_unsup_soft, pseudo_labels.unsqueeze(1)
+        )
 
         consistency_weight = get_current_consistency_weight(i_iter // 150)
         loss = sup_loss + consistency_weight * unsup_loss
         loss.backward()
-        loss_value += loss.item()
         optimizer.step()
 
         # update cta bins
         with torch.no_grad():
-            update_policies(outputs_weak_sup_soft, labels[:labeled_bs], ops_weak[:labeled_bs], cta)
+            update_policies(
+                outputs_weak_sup_soft, labels[:labeled_bs], ops_weak, cta, aug_mode="weak"
+            )
+            update_policies(
+                outputs_strong_unsup_soft, pseudo_labels, ops_strong, cta, aug_mode="strong"
+            )
 
         logging.info(
-            "iter = {0:8d}/{1:8d}, total_loss = {2:.3f}".format(i_iter, args.num_steps, loss_value)
+            "iter = {0:8d}/{1:8d}, total_loss = {2:.3f}".format(i_iter, args.num_steps, loss.item())
         )
 
         if i_iter % 10 == 0:
