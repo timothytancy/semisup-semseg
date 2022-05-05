@@ -186,6 +186,13 @@ def get_arguments():
     parser.add_argument(
         "--consistency_rampup", type=float, default=200.0, help="consistency_rampup"
     )
+    parser.add_argument("--ema_decay", type=float, default=0.99, help="ema_decay")
+    parser.add_argument(
+        "--use_ema",
+        type=bool,
+        default=False,
+        help="use mean teacher for pseudo labels and validation",
+    )
     return parser.parse_args()
 
 
@@ -260,6 +267,13 @@ def update_policies(probs, targets, policies, cta, aug_mode=None):
         cta.update_rates([OP(f=op2, bins=[bin2])], 1.0 - 0.5 * error)
 
 
+def update_ema_variables(model, ema_model, alpha, global_step):
+    # Use the true average until the exponential average is more correct
+    alpha = min(1 - 1 / (global_step + 1), alpha)
+    for ema_param, param in zip(ema_model.parameters(), model.parameters()):
+        ema_param.data.mul_(alpha).add_(1 - alpha, param.data)
+
+
 logpath = "result/" + args.out
 
 
@@ -279,15 +293,23 @@ def main():
     saved_state_dict = torch.load(args.restore_from)
 
     # only copy the params that exist in current model (caffe-like)
-    new_params = model.state_dict().copy()
-    for name, param in new_params.items():
-        if name in saved_state_dict and param.size() == saved_state_dict[name].size():
-            new_params[name].copy_(saved_state_dict[name])
-    model.load_state_dict(new_params)
+    def load_params(model):
+        new_params = model.state_dict().copy()
+        for name, param in new_params.items():
+            if name in saved_state_dict and param.size() == saved_state_dict[name].size():
+                new_params[name].copy_(saved_state_dict[name])
+        model.load_state_dict(new_params)
 
+    load_params(model)
     model.train()
 
-    # FIXME: ADD MEAN TEACHER MODEL
+    if args.use_ema:
+        ema_model = Res_Deeplab(num_classes=args.num_classes)
+        for param in ema_model.parameters():
+            param.detach_()
+        ema_model.cuda()
+        load_params(ema_model)
+        ema_model.train()
 
     cudnn.benchmark = True
 
@@ -298,17 +320,7 @@ def main():
     cta = CTAugment()
 
     if args.dataset == "pascal_voc":
-        train_dataset = VOCCTADataSet(
-            args.data_dir,
-            args.data_list,
-            crop_size=input_size,
-            cta=cta
-            # ops_weak=ops_weak,
-            # ops_strong=ops_strong
-            # scale=args.random_scale,
-            # mirror=args.random_mirror,
-            # mean=IMG_MEAN,
-        )
+        train_dataset = VOCCTADataSet(args.data_dir, args.data_list, crop_size=input_size, cta=cta)
         valloader = data.DataLoader(
             VOCDataSet(
                 args.data_dir,
@@ -370,9 +382,6 @@ def main():
         batch_sampler = TwoStreamBatchSampler(
             labeled_idxs, unlabeled_idxs, args.batch_size, args.batch_size - labeled_bs
         )
-        # trainloader = data.DataLoader(
-        #     train_dataset, batch_size=args.batch_size, sampler=batch_sampler, num_workers=4, pin_memory=True
-        # )
         trainloader = data.DataLoader(
             train_dataset,
             batch_sampler=batch_sampler,
@@ -428,8 +437,14 @@ def main():
             outputs_weak_sup_soft, labels[:labeled_bs].unsqueeze(1)
         )
 
-        outputs_weak_unsup_soft = torch.softmax(outputs_weak_unsup, dim=1)
-        pseudo_labels = torch.argmax(outputs_weak_unsup_soft.detach(), dim=1, keepdim=False)
+        if args.use_ema:
+            with torch.no_grad():
+                ema_outputs_weak = interp(ema_model(images_weak))
+                ema_outputs_soft = torch.softmax(ema_outputs_weak[labeled_bs:], dim=1)
+                pseudo_labels = torch.argmax(ema_outputs_soft.detach(), dim=1, keepdim=False,)
+        else:
+            outputs_weak_unsup_soft = torch.softmax(outputs_weak_unsup, dim=1)
+            pseudo_labels = torch.argmax(outputs_weak_unsup_soft.detach(), dim=1, keepdim=False)
 
         # unsupervised loss
         unsup_loss = loss_calc(outputs_strong_unsup, pseudo_labels) + dice_loss(
@@ -441,13 +456,17 @@ def main():
         loss.backward()
         optimizer.step()
 
+        # update ema model
+        if args.use_ema:
+            update_ema_variables(model, ema_model, args.ema_decay, i_iter)
+
         # update cta bins
         with torch.no_grad():
             update_policies(
                 outputs_weak_sup_soft, labels[:labeled_bs], ops_weak, cta, aug_mode="weak"
             )
             update_policies(
-                outputs_strong_unsup_soft, pseudo_labels, ops_strong, cta, aug_mode="strong"
+                outputs_strong_unsup_soft, labels[labeled_bs:], ops_strong, cta, aug_mode="strong"
             )
 
         logging.info(
@@ -459,7 +478,10 @@ def main():
             writer.add_scalar("loss/unsup_loss", unsup_loss.item(), i_iter)
             writer.add_scalar("loss/total_loss", loss.item(), i_iter)
         if i_iter % 200 == 0 and i_iter > 0:
-            miou_val, loss_val = validate(valloader, interp_val, model, writer, i_iter)
+            if args.use_ema:
+                miou_val, loss_val = validate(valloader, interp_val, ema_model, writer, i_iter)
+            else:
+                miou_val, loss_val = validate(valloader, interp_val, model, writer, i_iter)
             logging.info(f"miou: {miou_val}, loss: {loss_val}")
             writer.add_scalar("val/miou", miou_val, i_iter)
         if i_iter >= args.num_steps - 1:
